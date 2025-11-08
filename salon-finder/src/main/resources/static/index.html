@@ -5,76 +5,141 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Salon Finder</title>
     
- 
+   
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     
-   
+    <!-- Style pour la carte -->
     <style>
-        /* On doit donner une hauteur à la carte pour qu'elle s'affiche */
         #map {
             height: 500px;
             width: 100%;
+        }
+        /* Style pour que la liste soit scrollable si elle est longue */
+        #salon-list {
+            max-height: 500px;
+            overflow-y: auto;
         }
     </style>
 </head>
 <body>
 
-    
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
             <a class="navbar-brand" href="#">Salon Finder</a>
         </div>
     </nav>
 
-    
     <div class="container mt-4">
         <div class="row">
-          
+            
             <div class="col-md-4">
                 <h2>Salons</h2>
+                
                 <div id="salon-list">
                     <p>Chargement des salons...</p>
-                   
                 </div>
             </div>
             
-            
+          
             <div class="col-md-8">
                 <h2>Carte</h2>
-                
                 <div id="map"></div>
             </div>
         </div>
     </div>
 
-    
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-
-   
-    
     <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyAuIpJzstluZZ8QDCxTP3gNNMpcLDtIntI&callback=initMap" async defer></script>
     
-   
+    
     <script>
+        
+        // On déclare la variable 'map' ici pour la rendre
+        // accessible à toutes nos fonctions (globale au script)
+        let map;
+
         /**
-         * Cette fonction est appelée par l'API Google Maps une fois chargée.
-         * Elle initialise la carte.
+         * Fonction d'initialisation de la carte (appelée par Google)
          */
         function initMap() {
-            // Coordonnées de Paris (pour centrer la carte)
             const paris = { lat: 48.8566, lng: 2.3522 };
 
-            // Créer un nouvel objet Google Map dans notre 'div' #map
-            const map = new google.maps.Map(document.getElementById('map'), {
-                zoom: 12, // Niveau de zoom
-                center: paris, // Centrer sur Paris
+            map = new google.maps.Map(document.getElementById('map'), {
+                zoom: 12,
+                center: paris,
             });
 
-           
-            //  les marqueurs
+            // Une fois la carte initialisée, on charge nos salons
+            chargerSalonsEtMarqueurs();
         }
 
-        // code pour charger les salons ici.
+        /**
+         * Nouvelle fonction pour charger les salons depuis notre API
+         */
+        async function chargerSalonsEtMarqueurs() {
+            const salonListElement = document.getElementById('salon-list');
+            
+            try {
+                // Appeler notre API backend (fetch)
+                
+                const response = await fetch('/api/salons');
+                
+                if (!response.ok) {
+                    throw new Error(`Erreur HTTP: ${response.status}`);
+                }
+
+                const salons = await response.json();
+
+                // Vider le message "Chargement..."
+                salonListElement.innerHTML = '';
+
+                if (salons.length === 0) {
+                    salonListElement.innerHTML = '<p>Aucun salon trouvé.</p>';
+                    return;
+                }
+
+                //Boucler sur chaque salon reçu
+                salons.forEach(salon => {
+                    
+                    //  Ajouter un marqueur sur la carte
+                    new google.maps.Marker({
+                        position: { lat: salon.latitude, lng: salon.longitude },
+                        map: map,
+                        title: salon.nom
+                    });
+
+                 
+                    const salonHtml = `
+                        <div class="card mb-2">
+                            <div class="card-body">
+                                <h5 class="card-title">${salon.nom}</h5>
+                                <h6 class="card-subtitle mb-2 text-muted">${salon.adresse}</h6>
+                                <span class="badge ${getBadgeClass(salon.type)}">${salon.type}</span>
+                            </div>
+                        </div>
+                    `;
+                    // On ajoute ce HTML à la liste
+                    salonListElement.innerHTML += salonHtml;
+                });
+
+            } catch (error) {
+                console.error('Erreur lors du chargement des salons:', error);
+                salonListElement.innerHTML = '<p class="text-danger">Impossible de charger les salons. Veuillez réessayer.</p>';
+            }
+        }
+
+        /**
+         * Petite fonction utilitaire pour choisir la couleur
+         * du badge Bootstrap en fonction du type de salon.
+         */
+        function getBadgeClass(type) {
+            switch (type) {
+                case 'HOMME': return 'bg-primary';
+                case 'FEMME': 'bg-danger';
+                case 'MIXTE': return 'bg-success';
+                default: return 'bg-secondary';
+            }
+        }
 
     </script>
 </body>
