@@ -34,6 +34,19 @@
             
             <div class="col-md-4">
                 <h2>Salons</h2>
+                <div class="mb-3">
+                    <label for="filter-type" class="form-label">Filtrer par type :</label>
+                    <!-- 
+                        Quand l'utilisateur change la valeur, on
+                        appelle notre fonction chargerSalonsEtMarqueurs() 
+                    -->
+                    <select id="filter-type" class="form-select" onchange="chargerSalonsEtMarqueurs()">
+                        <option value="TOUS">Tous les types</option>
+                        <option value="HOMME">Homme</option>
+                        <option value="FEMME">Femme</option>
+                        <option value="MIXTE">Mixte</option>
+                    </select>
+                </div>
                 
                 <div id="salon-list">
                     <p>Chargement des salons...</p>
@@ -57,6 +70,7 @@
         // On déclare la variable 'map' ici pour la rendre
         // accessible à toutes nos fonctions (globale au script)
         let map;
+        let markers =[];
 
         /**
          * Fonction d'initialisation de la carte (appelée par Google)
@@ -72,17 +86,32 @@
             // Une fois la carte initialisée, on charge nos salons
             chargerSalonsEtMarqueurs();
         }
+        /**
+         * Pour effacer les anciens marqueurs de la carte
+         */
+        function clearMarkers() {
+            for (let i = 0; i < markers.length; i++) {
+                markers[i].setMap(null); // Retire le marqueur de la carte
+            }
+            markers = []; // Vide le tableau
+        }
 
         /**
          * Nouvelle fonction pour charger les salons depuis notre API
          */
         async function chargerSalonsEtMarqueurs() {
             const salonListElement = document.getElementById('salon-list');
-            
+            const filterType = document.getElementById('filter-type').value;
+
+            :///construction de l'URL (par rapport au filtre)
+            let apiUrl = '/api/salons';
+            if (filterType !== 'TOUS') {
+                apiUrl += `?type=${filterType}`; // Ex: /api/salons?type=HOMME
+            }
             try {
                 // Appeler notre API backend (fetch)
                 
-                const response = await fetch('/api/salons');
+                const response = await fetch(apiUrl);
                 
                 if (!response.ok) {
                     throw new Error(`Erreur HTTP: ${response.status}`);
@@ -92,6 +121,7 @@
 
                 // Vider le message "Chargement..."
                 salonListElement.innerHTML = '';
+                clearMarkers();
 
                 if (salons.length === 0) {
                     salonListElement.innerHTML = '<p>Aucun salon trouvé.</p>';
@@ -107,6 +137,7 @@
                         map: map,
                         title: salon.nom
                     });
+                    markers.push(marker);
 
                  
                     const salonHtml = `
