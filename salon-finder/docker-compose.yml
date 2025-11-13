@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  
+  # Service 1: Notre application Spring Boot
+  app:
+    # Construire l'image en utilisant le Dockerfile dans ce dossier
+    build: .
+    # Exposer le port 8080 du conteneur sur le port 8080 de notre machine
+    ports:
+      - "8080:8080"
+    # Passer les identifiants de la BDD à Spring Boot
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/salon_db
+      - SPRING_DATASOURCE_USERNAME=user
+      - SPRING_DATASOURCE_PASSWORD=password
+    # Très important : ne pas démarrer "app" TANT QUE "db" n'est pas prêt
+    depends_on:
+      - db
+
+  # Service 2: La base de données PostgreSQL
+  db:
+    # Utiliser l'image officielle de PostgreSQL
+    image: postgres:15
+    # Définir les variables d'environnement pour créer la BDD et l'utilisateur
+    environment:
+      - POSTGRES_DB=salon_db
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+    # Lier les données à un "volume" pour qu'elles soient permanentes
+    # même si on arrête le conteneur
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+# Définir le volume de stockage
+volumes:
+  postgres_data:
