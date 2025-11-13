@@ -3,18 +3,43 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Salon Finder</title>
+    <title>Salon Finder (Live)</title>
     
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     
     <style>
         #map {
-            height: 500px;
+            height: 80vh;
             width: 100%;
         }
         #salon-list {
-            max-height: 500px;
+            height: 80vh;
             overflow-y: auto;
+        }
+        .salon-card {
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .salon-card:hover {
+            background-color: #f8f9fa;
+        }
+        /* Style pour les marqueurs personnalisés */
+        .gmp-advanced-marker-pin-with-icon {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 2.5rem;
+            height: 2.5rem;
+            background: #FF0000; /* Fond rouge */
+            border-radius: 50%;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        .gmp-advanced-marker-pin-with-icon .icon {
+            color: white;
+            font-size: 1.2rem;
+            line-height: 1;
+            content: '✂'; 
         }
     </style>
 </head>
@@ -22,151 +47,173 @@
 
     <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="#">Salon Finder</a>
+            <a class="navbar-brand" href="#">Salon Finder (temps réel)</a>
         </div>
     </nav>
 
-    <div class="container mt-4">
+    <div class="container-fluid mt-4">
         <div class="row">
-            <!-- Colonne pour les filtres et la liste -->
+            
             <div class="col-md-4">
-                <h2>Salons</h2>
                 
-                <!-- NOUVEAU : Le formulaire de filtre -->
-                <div class="mb-3">
-                    <label for="filter-type" class="form-label">Filtrer par type :</label>
-                    <!-- 
-                        Quand l'utilisateur change la valeur, on
-                        appelle notre fonction chargerSalonsEtMarqueurs() 
-                    -->
-                    <select id="filter-type" class="form-select" onchange="chargerSalonsEtMarqueurs()">
-                        <option value="TOUS">Tous les types</option>
-                        <option value="HOMME">Homme</option>
-                        <option value="FEMME">Femme</option>
-                        <option value="MIXTE">Mixte</option>
-                    </select>
+                <div class="input-group mb-3">
+                    <input type="text" id="search-keyword" class="form-control" placeholder="Rechercher (ex: barbier, lissage...)">
+                    <button class="btn btn-primary" type="button" id="search-button">Rechercher</button>
                 </div>
                 
-                <!-- Le conteneur pour notre liste de salons -->
                 <div id="salon-list">
-                    <p>Chargement des salons...</p>
+                    <p class="text-muted">Déplacez la carte pour rechercher des salons...</p>
                 </div>
             </div>
             
-            <!-- Colonne pour la carte -->
+            <!-- carte -->
             <div class="col-md-8">
-                <h2>Carte</h2>
                 <div id="map"></div>
             </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB1XT8OHSC2gBc0Bcy--d44V7GEZr0N2X8&callback=initMap" async defer></script>
     
-    <!-- JavaScript (MIS À JOUR) -->
+    <script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyB1XT8OHSC2gBc0Bcy--d44V7GEZr0N2X8&v=beta&libraries=places,marker&callback=initMap" async defer></script>
+    
     <script>
         
         let map;
-        // NOUVEAU : Un tableau pour garder en mémoire les marqueurs
+        let infoWindow;
         let markers = [];
+        let searchTimer;
+        
+        let Place;
+        let AdvancedMarkerElement;
 
-        function initMap() {
+        async function initMap() {
             const paris = { lat: 48.8566, lng: 2.3522 };
 
-            map = new google.maps.Map(document.getElementById('map'), {
-                zoom: 12,
+            const { Map } = await google.maps.importLibrary("maps");
+            ({ Place } = await google.maps.importLibrary("places"));
+            ({ AdvancedMarkerElement } = await google.maps.importLibrary("marker"));
+
+            map = new Map(document.getElementById('map'), {
+                zoom: 13,
                 center: paris,
+                mapId: 'DEMO_MAP_ID'
             });
 
-            // On charge les salons (tous, par défaut)
-            chargerSalonsEtMarqueurs();
+            infoWindow = new google.maps.InfoWindow();
+
+            map.addListener('idle', () => {
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(searchNearbySalons, 1000);
+            });
+
+            document.getElementById('search-button').addEventListener('click', searchNearbySalons);
         }
 
-        /**
-         * NOUVELLE FONCTION :
-         * Pour effacer les anciens marqueurs de la carte
-         */
-        function clearMarkers() {
-            for (let i = 0; i < markers.length; i++) {
-                markers[i].setMap(null); // Retire le marqueur de la carte
-            }
-            markers = []; // Vide le tableau
-        }
+        async function searchNearbySalons() {
+            const keyword = document.getElementById('search-keyword').value;
+            
+            const request = {
+                textQuery: `salon de coiffure ${keyword}`,
+                locationBias: map.getCenter(),
+                includedType: 'hair_salon',
+                fields: ["displayName", "location", "formattedAddress", "photos", "rating", "websiteURI", "businessStatus"],
+                language: 'fr'
+            };
 
-        /**
-         * Fonction de chargement (MISE À JOUR)
-         */
-        async function chargerSalonsEtMarqueurs() {
+            clearResults();
             const salonListElement = document.getElementById('salon-list');
-            
-            // NOUVEAU : Lire la valeur du filtre
-            const filterType = document.getElementById('filter-type').value;
+            salonListElement.innerHTML = '<p>Recherche en cours...</p>';
 
-            // NOUVEAU : Construire l'URL en fonction du filtre
-            let apiUrl = '/api/salons';
-            if (filterType !== 'TOUS') {
-                apiUrl += `?type=${filterType}`; // Ex: /api/salons?type=HOMME
-            }
-            
             try {
-                const response = await fetch(apiUrl); // Utilise la nouvelle URL
                 
-                if (!response.ok) {
-                    throw new Error(`Erreur HTTP: ${response.status}`);
-                }
+                //  utilise searchByText 
+                const { places } = await Place.searchByText(request);
 
-                const salons = await response.json();
-
-                // Vider le message "Chargement..."
                 salonListElement.innerHTML = '';
-                
-                // NOUVEAU : Effacer les anciens marqueurs avant d'en ajouter
-                clearMarkers();
 
-                if (salons.length === 0) {
-                    salonListElement.innerHTML = '<p>Aucun salon ne correspond à ce filtre.</p>';
+                if (!places || places.length === 0) {
+                    salonListElement.innerHTML = '<p>Aucun salon trouvé.</p>';
                     return;
                 }
 
-                salons.forEach(salon => {
-                    
-                    // Créer le marqueur
-                    const marker = new google.maps.Marker({
-                        position: { lat: salon.latitude, lng: salon.longitude },
-                        map: map,
-                        title: salon.nom
-                    });
-                    
-                    // NOUVEAU : Ajouter le marqueur à notre tableau
-                    markers.push(marker);
-
-                    // Ajouter le salon à la liste HTML
-                    const salonHtml = `
-                        <div class="card mb-2">
-                            <div class="card-body">
-                                <h5 class="card-title">${salon.nom}</h5>
-                                <h6 class="card-subtitle mb-2 text-muted">${salon.adresse}</h6>
-                                <span class="badge ${getBadgeClass(salon.type)}">${salon.type}</span>
-                            </div>
-                        </div>
-                    `;
-                    salonListElement.innerHTML += salonHtml;
+                places.forEach(place => {
+                    createMarker(place);
+                    addSalonToList(place);
                 });
 
             } catch (error) {
-                console.error('Erreur lors du chargement des salons:', error);
-                salonListElement.innerHTML = '<p class="text-danger">Impossible de charger les salons.</p>';
+                console.error('Erreur Google Places (Corrigée):', error);
+                salonListElement.innerHTML = '<p class="text-danger">Erreur lors de la recherche. Vérifiez la console.</p>';
             }
         }
 
-        function getBadgeClass(type) {
-            switch (type) {
-                case 'HOMME': return 'bg-primary';
-                case 'FEMME': return 'bg-danger';
-                case 'MIXTE': return 'bg-success';
-                default: return 'bg-secondary';
+        function createMarker(place) {
+            if (!place.location) return;
+
+            const markerIcon = document.createElement('div');
+            markerIcon.className = 'gmp-advanced-marker-pin-with-icon';
+            markerIcon.innerHTML = '<span class="icon">✂️</span>';
+
+            const marker = new AdvancedMarkerElement({
+                map: map,
+                position: place.location,
+                title: place.displayName,
+                content: markerIcon
+            });
+
+            markers.push(marker);
+
+            marker.addListener('gmp-click', () => {
+                infoWindow.setContent(`
+                    <div>
+                        <strong>${place.displayName}</strong><br>
+                        ${place.formattedAddress}<br>
+                        ${place.rating ? `Note : ${place.rating} ★` : 'Pas de note'}
+                    </div>
+                `);
+                infoWindow.open(map, marker);
+            });
+        }
+
+        function addSalonToList(place) {
+            const salonListElement = document.getElementById('salon-list');
+            
+            const photoUrl = 'https://placehold.co/100x100/eeeeee/aaaaaa?text=Salon';
+
+            const salonHtml = `
+                <div class="card mb-2 salon-card" onclick="panToMarker(${place.location.lat}, ${place.location.lng})">
+                    <div class="row g-0">
+                        <div class="col-4">
+                            <img src="${photoUrl}" class="img-fluid rounded-start" alt="${place.displayName}" style="width: 100%; height: 100px; object-fit: cover;">
+                        </div>
+                        <div class="col-8">
+                            <div class="card-body">
+                                <h6 class="card-title" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${place.displayName}</h6>
+                                <p class="card-text small text-muted" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${place.formattedAddress}</p>
+                                <p class="card-text small">
+                                    ${place.rating ? `<strong>${place.rating} ★</strong>` : ''}
+                                    ${place.businessStatus === 'OPERATIONAL' ? '<span class="text-success">Ouvert</span>' : '<span class="text-danger">Fermé</span>'}
+                                </p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            salonListElement.innerHTML += salonHtml;
+        }
+
+        function panToMarker(lat, lng) {
+            map.panTo({ lat, lng });
+            map.setZoom(15);
+        }
+
+        function clearResults() {
+            for (let i = 0; i < markers.length; i++) {
+                markers[i].map = null;
             }
+            markers = [];
+            document.getElementById('salon-list').innerHTML = '';
         }
 
     </script>
